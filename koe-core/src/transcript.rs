@@ -1,23 +1,47 @@
-/// Aggregates ASR interim and final results into a single final transcript.
+/// Aggregates ASR interim, definite, and final results into a single final transcript.
+/// Also collects interim revision history to help LLM identify uncertain segments.
 pub struct TranscriptAggregator {
     interim_text: String,
+    /// Accumulated text from definite (two-pass confirmed) segments.
+    definite_text: String,
     final_text: String,
     has_final: bool,
+    has_definite: bool,
+    /// Unique interim texts in order of appearance (deduped consecutive identical ones).
+    interim_history: Vec<String>,
 }
 
 impl TranscriptAggregator {
     pub fn new() -> Self {
         Self {
             interim_text: String::new(),
+            definite_text: String::new(),
             final_text: String::new(),
             has_final: false,
+            has_definite: false,
+            interim_history: Vec::new(),
         }
     }
 
     /// Update with an interim result (replaces previous interim).
     pub fn update_interim(&mut self, text: &str) {
         if !text.is_empty() {
+            // Only record if different from the last interim
+            if self.interim_history.last().map(|s| s.as_str()) != Some(text) {
+                self.interim_history.push(text.to_string());
+            }
             self.interim_text = text.to_string();
+        }
+    }
+
+    /// Update with a definite result from two-pass recognition.
+    /// The full text field from a response containing definite utterances
+    /// includes all confirmed segments so far — use it as the definite baseline.
+    pub fn update_definite(&mut self, text: &str) {
+        if !text.is_empty() {
+            self.has_definite = true;
+            self.definite_text = text.to_string();
+            log::info!("definite segment confirmed: {} chars", text.len());
         }
     }
 
@@ -34,10 +58,12 @@ impl TranscriptAggregator {
     }
 
     /// Get the best available text.
-    /// Returns final text if available, otherwise the last interim text.
+    /// Priority: final > definite > interim.
     pub fn best_text(&self) -> &str {
-        if self.has_final {
+        if self.has_final && !self.final_text.is_empty() {
             &self.final_text
+        } else if self.has_definite && !self.definite_text.is_empty() {
+            &self.definite_text
         } else {
             &self.interim_text
         }
@@ -48,6 +74,17 @@ impl TranscriptAggregator {
     }
 
     pub fn has_any_text(&self) -> bool {
-        !self.final_text.is_empty() || !self.interim_text.is_empty()
+        !self.final_text.is_empty() || !self.definite_text.is_empty() || !self.interim_text.is_empty()
+    }
+
+    /// Return the interim revision history for LLM context.
+    /// Keeps only the last `max_entries` to avoid bloating the prompt.
+    pub fn interim_history(&self, max_entries: usize) -> &[String] {
+        let len = self.interim_history.len();
+        if len <= max_entries {
+            &self.interim_history
+        } else {
+            &self.interim_history[len - max_entries..]
+        }
     }
 }

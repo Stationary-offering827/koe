@@ -6,6 +6,9 @@ use crate::errors::Result;
 pub enum AsrEvent {
     Connected,
     Interim(String),
+    /// A confirmed sentence from two-pass recognition (definite=true).
+    /// Higher accuracy than Interim when enable_nonstream is on.
+    Definite(String),
     Final(String),
     Error(String),
     Closed,
@@ -33,6 +36,8 @@ pub struct AsrConfig {
     pub enable_itn: bool,
     /// Enable automatic punctuation
     pub enable_punc: bool,
+    /// Enable two-pass recognition (streaming + non-streaming re-recognition)
+    pub enable_nonstream: bool,
     /// Hotwords for improved recognition accuracy
     pub hotwords: Vec<String>,
 }

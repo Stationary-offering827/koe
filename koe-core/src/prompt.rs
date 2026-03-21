@@ -45,16 +45,33 @@ pub fn load_user_prompt_template(path: &Path) -> String {
 
 /// Render the user prompt by replacing placeholders in the template.
 /// cbindgen:ignore
-pub fn render_user_prompt(template: &str, asr_text: &str, dictionary_entries: &[String]) -> String {
+pub fn render_user_prompt(
+    template: &str,
+    asr_text: &str,
+    dictionary_entries: &[String],
+    interim_history: &[String],
+) -> String {
     let dict_str = if dictionary_entries.is_empty() {
         String::from("（无）")
     } else {
         dictionary_entries.join("\n")
     };
 
+    let interim_str = if interim_history.is_empty() {
+        String::from("（无）")
+    } else {
+        interim_history
+            .iter()
+            .enumerate()
+            .map(|(i, t)| format!("{}. {}", i + 1, t))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
     template
         .replace("{{asr_text}}", asr_text)
         .replace("{{dictionary_entries}}", &dict_str)
+        .replace("{{interim_history}}", &interim_str)
 }
 
 /// Built-in default system prompt.
@@ -76,20 +93,22 @@ fn build_default_system_prompt() -> String {
          4. Spacing: insert a half-width space between Chinese and English/numbers (e.g. \"使用Python\" -> \"使用 Python\", \"有3个\" -> \"有 3 个\"). No space between English words and Chinese punctuation.\n\
          5. Punctuation: use Chinese punctuation in Chinese context (，。！？：；) and English punctuation in English context. Do not mix. Use \"……\" instead of \"...\". Chinese sentences must end with punctuation.\n\
          6. Prefer terms, proper nouns, and spellings from the user dictionary when provided. The dictionary takes highest priority.\n\
-         7. Remove filler words that carry no semantic meaning, such as 嗯, 啊, 哦, 呃, 这个, 那个, 就是, well, like, you know, um, uh, so basically.\n\
-         8. Do not remove words that are clearly names, terms, titles, quoted content, or fixed expressions.\n\
-         9. Code-related terms should keep their conventional form: e.g. \"main 函数\" not \"mian 函数\", \"npm install\" not \"NPM install\", \"git push\" not \"Git Push\" (subcommands stay lowercase).\n\
-         10. Output only the corrected text. No explanations, no JSON, no quotation marks.",
+         7. Use the ASR interim revision history to identify uncertain words. Words that changed across revisions are likely misrecognized — pay extra attention to correcting them.\n\
+         8. Remove filler words that carry no semantic meaning, such as 嗯, 啊, 哦, 呃, 这个, 那个, 就是, well, like, you know, um, uh, so basically.\n\
+         9. Do not remove words that are clearly names, terms, titles, quoted content, or fixed expressions.\n\
+         10. Code-related terms should keep their conventional form: e.g. \"main 函数\" not \"mian 函数\", \"npm install\" not \"NPM install\", \"git push\" not \"Git Push\" (subcommands stay lowercase).\n\
+         11. Output only the corrected text. No explanations, no JSON, no quotation marks.",
     )
 }
 
 /// Built-in default user prompt template.
 /// cbindgen:ignore
 fn build_default_user_prompt_template() -> String {
-    String::from("ASR transcript:\n{{asr_text}}\n\nUser dictionary:\n{{dictionary_entries}}\n\nOutput the corrected text only.")
+    String::from("ASR transcript:\n{{asr_text}}\n\nASR interim revisions (earlier drafts, may reveal uncertain words):\n{{interim_history}}\n\nUser dictionary:\n{{dictionary_entries}}\n\nOutput the corrected text only.")
 }
 
 /// Filter dictionary candidates to reduce prompt size.
+/// When `max_candidates` is 0, all entries are sent without filtering.
 /// When dictionary has more than `max_candidates` entries,
 /// keep only those with character overlap with the ASR text.
 /// cbindgen:ignore
@@ -98,7 +117,7 @@ pub fn filter_dictionary_candidates(
     asr_text: &str,
     max_candidates: usize,
 ) -> Vec<String> {
-    if dictionary.len() <= max_candidates {
+    if max_candidates == 0 || dictionary.len() <= max_candidates {
         return dictionary.to_vec();
     }
 

@@ -35,6 +35,8 @@ pub struct AsrSection {
     pub enable_itn: bool,
     #[serde(default = "default_true")]
     pub enable_punc: bool,
+    #[serde(default = "default_true")]
+    pub enable_nonstream: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -80,10 +82,10 @@ pub struct DictionarySection {
 // ─── Defaults ───────────────────────────────────────────────────────
 
 fn default_asr_url() -> String {
-    "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel".into()
+    "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async".into()
 }
 fn default_resource_id() -> String {
-    "volc.bigasr.sauc.duration".into()
+    "volc.seedasr.sauc.duration".into()
 }
 fn default_connect_timeout() -> u64 {
     3000
@@ -104,7 +106,7 @@ fn default_max_output_tokens() -> u32 {
     1024
 }
 fn default_dictionary_max_candidates() -> usize {
-    200
+    0
 }
 fn default_dictionary_path() -> String {
     "dictionary.txt".into()
@@ -267,16 +269,17 @@ const DEFAULT_CONFIG_YAML: &str = r#"# Koe - Voice Input Tool Configuration
 # ~/.koe/config.yaml
 
 asr:
-  # Doubao (豆包) Streaming ASR
-  url: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
+  # Doubao (豆包) Streaming ASR 2.0 (优化版双向流式)
+  url: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
   app_key: ""          # X-Api-App-Key (火山引擎 App ID)
   access_key: ""       # X-Api-Access-Key (火山引擎 Access Token)
-  resource_id: "volc.bigasr.sauc.duration"
+  resource_id: "volc.seedasr.sauc.duration"
   connect_timeout_ms: 3000
   final_wait_timeout_ms: 5000
   enable_ddc: true     # 语义顺滑 (去除口语重复/语气词)
   enable_itn: true     # 文本规范化 (数字、日期等)
   enable_punc: true    # 自动标点
+  enable_nonstream: true  # 二遍识别 (流式+非流式, 提升准确率)
 
 llm:
   # OpenAI-compatible endpoint for text correction
@@ -287,7 +290,7 @@ llm:
   top_p: 1
   timeout_ms: 8000
   max_output_tokens: 1024
-  dictionary_max_candidates: 200
+  dictionary_max_candidates: 0    # 0 = send all entries to LLM
   system_prompt_path: "system_prompt.txt"  # relative to ~/.koe/
   user_prompt_path: "user_prompt.txt"      # relative to ~/.koe/
 
@@ -322,14 +325,18 @@ Rules:
 4. Spacing: insert a half-width space between Chinese and English/numbers (e.g. \"使用Python\" -> \"使用 Python\", \"有3个\" -> \"有 3 个\"). No space between English words and Chinese punctuation.
 5. Punctuation: use Chinese punctuation in Chinese context (，。！？：；) and English punctuation in English context. Do not mix. Use \"……\" instead of \"...\". Chinese sentences must end with punctuation.
 6. Prefer terms, proper nouns, and spellings from the user dictionary when provided. The dictionary takes highest priority.
-7. Remove filler words that carry no semantic meaning, such as 嗯, 啊, 哦, 呃, 这个, 那个, 就是, well, like, you know, um, uh, so basically.
-8. Do not remove words that are clearly names, terms, titles, quoted content, or fixed expressions.
-9. Code-related terms should keep their conventional form: e.g. \"main 函数\" not \"mian 函数\", \"npm install\" not \"NPM install\", \"git push\" not \"Git Push\" (subcommands stay lowercase).
-10. Output only the corrected text. No explanations, no JSON, no quotation marks.";
+7. Use the ASR interim revision history to identify uncertain words. Words that changed across revisions are likely misrecognized — pay extra attention to correcting them.
+8. Remove filler words that carry no semantic meaning, such as 嗯, 啊, 哦, 呃, 这个, 那个, 就是, well, like, you know, um, uh, so basically.
+9. Do not remove words that are clearly names, terms, titles, quoted content, or fixed expressions.
+10. Code-related terms should keep their conventional form: e.g. \"main 函数\" not \"mian 函数\", \"npm install\" not \"NPM install\", \"git push\" not \"Git Push\" (subcommands stay lowercase).
+11. Output only the corrected text. No explanations, no JSON, no quotation marks.";
 
 const DEFAULT_USER_PROMPT: &str = "\
 ASR transcript:
 {{asr_text}}
+
+ASR interim revisions (earlier drafts, may reveal uncertain words):
+{{interim_history}}
 
 User dictionary:
 {{dictionary_entries}}

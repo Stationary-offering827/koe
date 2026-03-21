@@ -109,17 +109,23 @@ impl DoubaoWsProvider {
             "enable_itn": config.enable_itn,
             "enable_punc": config.enable_punc,
             "enable_ddc": config.enable_ddc,
+            "enable_nonstream": config.enable_nonstream,
             "result_type": "full",
             "show_utterances": true
         });
 
-        // Add hotwords if dictionary entries are available
+        // Add hotwords via corpus.context (official API format)
         if !config.hotwords.is_empty() {
             let hotwords: Vec<serde_json::Value> = config.hotwords.iter()
                 .map(|w| serde_json::json!({"word": w}))
                 .collect();
-            request["hotwords"] = serde_json::json!(hotwords);
-            log::info!("ASR hotwords: {} entries", config.hotwords.len());
+            let hotwords_json = serde_json::json!({"hotwords": hotwords});
+            let context_str = serde_json::to_string(&hotwords_json)
+                .unwrap_or_default();
+            request["corpus"] = serde_json::json!({
+                "context": context_str
+            });
+            log::info!("ASR hotwords: {} entries via corpus.context", config.hotwords.len());
         }
 
         let payload_json = serde_json::json!({
@@ -135,6 +141,10 @@ impl DoubaoWsProvider {
             },
             "request": request
         });
+
+        log::info!("ASR full client request: endpoint={}, resource_id={}, enable_nonstream={}, enable_ddc={}, enable_itn={}, enable_punc={}",
+            config.url, config.resource_id, config.enable_nonstream, config.enable_ddc, config.enable_itn, config.enable_punc);
+        log::debug!("ASR request payload: {}", serde_json::to_string_pretty(&payload_json).unwrap_or_default());
 
         let json_bytes = serde_json::to_vec(&payload_json)
             .map_err(|e| KoeError::AsrProtocol(format!("serialize request: {e}")))?;
@@ -384,6 +394,7 @@ impl AsrProvider for DoubaoWsProvider {
                                 .to_string();
 
                             // Check if any utterance has definite=true
+                            // (two-pass re-recognized with higher accuracy)
                             let has_definite = json
                                 .get("result")
                                 .and_then(|r| r.get("utterances"))
@@ -400,9 +411,8 @@ impl AsrProvider for DoubaoWsProvider {
                             if is_last {
                                 Ok(AsrEvent::Final(text))
                             } else if has_definite {
-                                // Definite utterances in streaming mode
-                                // are intermediate "confirmed" segments
-                                Ok(AsrEvent::Interim(text))
+                                // Definite: confirmed segment from two-pass recognition
+                                Ok(AsrEvent::Definite(text))
                             } else {
                                 Ok(AsrEvent::Interim(text))
                             }

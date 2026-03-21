@@ -220,6 +220,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
         enable_ddc: cfg.asr.enable_ddc,
         enable_itn: cfg.asr.enable_itn,
         enable_punc: cfg.asr.enable_punc,
+        enable_nonstream: cfg.asr.enable_nonstream,
         hotwords: core.dictionary.clone(),
     };
     let llm_config = cfg.llm.clone();
@@ -375,6 +376,9 @@ async fn run_session(
                             aggregator.update_interim(&text);
                         }
                     }
+                    Ok(AsrEvent::Definite(text)) => {
+                        aggregator.update_definite(&text);
+                    }
                     Ok(AsrEvent::Final(text)) => {
                         aggregator.update_final(&text);
                     }
@@ -428,9 +432,11 @@ async fn run_session(
         return;
     }
 
+    let interim_history = aggregator.interim_history(10).to_vec();
     log::info!(
-        "[{session_id}] ASR result: {} chars",
-        asr_text.len()
+        "[{session_id}] ASR result: {} chars, {} interim revisions",
+        asr_text.len(),
+        interim_history.len(),
     );
 
     // Store ASR text in session
@@ -468,7 +474,12 @@ async fn run_session(
             dictionary_max_candidates,
         );
 
-        let user_prompt = prompt::render_user_prompt(&user_prompt_template, &asr_text, &candidates);
+        log::info!("[{session_id}] LLM request — asr_text: \"{}\"", asr_text);
+        log::info!("[{session_id}] LLM request — {} dictionary entries, {} interim revisions",
+            candidates.len(), interim_history.len());
+
+        let user_prompt = prompt::render_user_prompt(&user_prompt_template, &asr_text, &candidates, &interim_history);
+        log::debug!("[{session_id}] LLM user prompt:\n{}", user_prompt);
 
         let request = CorrectionRequest {
             asr_text: asr_text.clone(),
@@ -536,6 +547,9 @@ async fn wait_for_final(
                 if !text.is_empty() {
                     aggregator.update_interim(&text);
                 }
+            }
+            Ok(AsrEvent::Definite(text)) => {
+                aggregator.update_definite(&text);
             }
             Ok(AsrEvent::Closed) => return,
             Ok(_) => {}
