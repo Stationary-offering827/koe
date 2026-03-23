@@ -1,5 +1,7 @@
-use crate::asr::{AsrConfig, AsrEvent, AsrProvider};
-use crate::errors::{KoeError, Result};
+use crate::config::AsrConfig;
+use crate::error::{AsrError, Result};
+use crate::event::AsrEvent;
+use crate::provider::AsrProvider;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -16,31 +18,20 @@ type WsStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 // ─── Binary Protocol Constants ──────────────────────────────────────
 
-// Header byte 0: version (high nibble) | header_size (low nibble)
 const PROTOCOL_VERSION: u8 = 0b0001;
 const HEADER_SIZE: u8 = 0b0001; // 1 * 4 = 4 bytes
 
-// Message types (high nibble of byte 1)
 const MSG_FULL_CLIENT_REQUEST: u8 = 0b0001;
 const MSG_AUDIO_ONLY: u8 = 0b0010;
 const MSG_FULL_SERVER_RESPONSE: u8 = 0b1001;
 const MSG_ERROR: u8 = 0b1111;
 
-// Message type specific flags (low nibble of byte 1)
 const FLAG_NONE: u8 = 0b0000;
-#[allow(dead_code)]
-const FLAG_HAS_SEQUENCE: u8 = 0b0001;
 const FLAG_LAST_PACKET: u8 = 0b0010;
-#[allow(dead_code)]
-const FLAG_LAST_PACKET_WITH_SEQ: u8 = 0b0011;
 
-// Serialization (high nibble of byte 2)
 const SERIAL_NONE: u8 = 0b0000;
 const SERIAL_JSON: u8 = 0b0001;
 
-// Compression (low nibble of byte 2)
-#[allow(dead_code)]
-const COMPRESS_NONE: u8 = 0b0000;
 const COMPRESS_GZIP: u8 = 0b0001;
 
 fn build_header(msg_type: u8, flags: u8, serialization: u8, compression: u8) -> [u8; 4] {
@@ -48,7 +39,7 @@ fn build_header(msg_type: u8, flags: u8, serialization: u8, compression: u8) -> 
         (PROTOCOL_VERSION << 4) | HEADER_SIZE,
         (msg_type << 4) | flags,
         (serialization << 4) | compression,
-        0x00, // reserved
+        0x00,
     ]
 }
 
@@ -56,10 +47,10 @@ fn gzip_compress(data: &[u8]) -> Result<Vec<u8>> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder
         .write_all(data)
-        .map_err(|e| KoeError::AsrProtocol(format!("gzip compress: {e}")))?;
+        .map_err(|e| AsrError::Protocol(format!("gzip compress: {e}")))?;
     encoder
         .finish()
-        .map_err(|e| KoeError::AsrProtocol(format!("gzip finish: {e}")))
+        .map_err(|e| AsrError::Protocol(format!("gzip finish: {e}")))
 }
 
 fn gzip_decompress(data: &[u8]) -> Result<Vec<u8>> {
@@ -67,11 +58,10 @@ fn gzip_decompress(data: &[u8]) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     decoder
         .read_to_end(&mut buf)
-        .map_err(|e| KoeError::AsrProtocol(format!("gzip decompress: {e}")))?;
+        .map_err(|e| AsrError::Protocol(format!("gzip decompress: {e}")))?;
     Ok(buf)
 }
 
-/// Build a binary frame: header + payload_size (big-endian u32) + payload
 fn build_frame(header: [u8; 4], payload: &[u8]) -> Vec<u8> {
     let payload_len = payload.len() as u32;
     let mut frame = Vec::with_capacity(4 + 4 + payload.len());
@@ -102,7 +92,16 @@ impl DoubaoWsProvider {
         }
     }
 
-    /// Build the full client request payload (JSON, then gzip compressed).
+    /// Returns the connect ID for this session.
+    pub fn connect_id(&self) -> &str {
+        &self.connect_id
+    }
+
+    /// Returns the server-assigned log ID (available after connect).
+    pub fn logid(&self) -> Option<&str> {
+        self.logid.as_deref()
+    }
+
     fn build_full_client_request(&self, config: &AsrConfig) -> Result<Vec<u8>> {
         let mut request = serde_json::json!({
             "model_name": "bigmodel",
@@ -114,23 +113,26 @@ impl DoubaoWsProvider {
             "show_utterances": true
         });
 
-        // Add hotwords via corpus.context (official API format)
         if !config.hotwords.is_empty() {
-            let hotwords: Vec<serde_json::Value> = config.hotwords.iter()
+            let hotwords: Vec<serde_json::Value> = config
+                .hotwords
+                .iter()
                 .map(|w| serde_json::json!({"word": w}))
                 .collect();
             let hotwords_json = serde_json::json!({"hotwords": hotwords});
-            let context_str = serde_json::to_string(&hotwords_json)
-                .unwrap_or_default();
+            let context_str = serde_json::to_string(&hotwords_json).unwrap_or_default();
             request["corpus"] = serde_json::json!({
                 "context": context_str
             });
-            log::info!("ASR hotwords: {} entries via corpus.context", config.hotwords.len());
+            log::info!(
+                "ASR hotwords: {} entries via corpus.context",
+                config.hotwords.len()
+            );
         }
 
         let payload_json = serde_json::json!({
             "user": {
-                "uid": "koe-app"
+                "uid": "koe-asr"
             },
             "audio": {
                 "format": "pcm",
@@ -142,20 +144,28 @@ impl DoubaoWsProvider {
             "request": request
         });
 
-        log::info!("ASR full client request: endpoint={}, resource_id={}, enable_nonstream={}, enable_ddc={}, enable_itn={}, enable_punc={}",
-            config.url, config.resource_id, config.enable_nonstream, config.enable_ddc, config.enable_itn, config.enable_punc);
-        log::debug!("ASR request payload: {}", serde_json::to_string_pretty(&payload_json).unwrap_or_default());
+        log::info!(
+            "ASR full client request: endpoint={}, resource_id={}, enable_nonstream={}, enable_ddc={}, enable_itn={}, enable_punc={}",
+            config.url, config.resource_id, config.enable_nonstream, config.enable_ddc, config.enable_itn, config.enable_punc
+        );
+        log::debug!(
+            "ASR request payload: {}",
+            serde_json::to_string_pretty(&payload_json).unwrap_or_default()
+        );
 
         let json_bytes = serde_json::to_vec(&payload_json)
-            .map_err(|e| KoeError::AsrProtocol(format!("serialize request: {e}")))?;
+            .map_err(|e| AsrError::Protocol(format!("serialize request: {e}")))?;
 
         let compressed = gzip_compress(&json_bytes)?;
-
-        let header = build_header(MSG_FULL_CLIENT_REQUEST, FLAG_NONE, SERIAL_JSON, COMPRESS_GZIP);
+        let header = build_header(
+            MSG_FULL_CLIENT_REQUEST,
+            FLAG_NONE,
+            SERIAL_JSON,
+            COMPRESS_GZIP,
+        );
         Ok(build_frame(header, &compressed))
     }
 
-    /// Build an audio-only frame (gzip compressed PCM data).
     fn build_audio_frame(data: &[u8], is_last: bool) -> Result<Vec<u8>> {
         let compressed = gzip_compress(data)?;
         let flags = if is_last { FLAG_LAST_PACKET } else { FLAG_NONE };
@@ -163,10 +173,9 @@ impl DoubaoWsProvider {
         Ok(build_frame(header, &compressed))
     }
 
-    /// Parse a binary server response frame.
     fn parse_server_response(data: &[u8]) -> Result<ServerMessage> {
         if data.len() < 4 {
-            return Err(KoeError::AsrProtocol("frame too short".into()));
+            return Err(AsrError::Protocol("frame too short".into()));
         }
 
         let msg_type = (data[1] >> 4) & 0x0F;
@@ -182,24 +191,15 @@ impl DoubaoWsProvider {
                 let header_bytes = ((data[0] & 0x0F) as usize) * 4;
                 let mut offset = header_bytes;
 
-                let _sequence = if has_sequence {
+                if has_sequence {
                     if data.len() < offset + 4 {
-                        return Err(KoeError::AsrProtocol("missing sequence".into()));
+                        return Err(AsrError::Protocol("missing sequence".into()));
                     }
-                    let seq = i32::from_be_bytes([
-                        data[offset],
-                        data[offset + 1],
-                        data[offset + 2],
-                        data[offset + 3],
-                    ]);
                     offset += 4;
-                    Some(seq)
-                } else {
-                    None
-                };
+                }
 
                 if data.len() < offset + 4 {
-                    return Err(KoeError::AsrProtocol("missing payload size".into()));
+                    return Err(AsrError::Protocol("missing payload size".into()));
                 }
                 let payload_size = u32::from_be_bytes([
                     data[offset],
@@ -210,7 +210,7 @@ impl DoubaoWsProvider {
                 offset += 4;
 
                 if data.len() < offset + payload_size {
-                    return Err(KoeError::AsrProtocol("incomplete payload".into()));
+                    return Err(AsrError::Protocol("incomplete payload".into()));
                 }
                 let payload_bytes = &data[offset..offset + payload_size];
 
@@ -222,7 +222,7 @@ impl DoubaoWsProvider {
 
                 let json: Value = if serialization == SERIAL_JSON {
                     serde_json::from_slice(&json_bytes)
-                        .map_err(|e| KoeError::AsrProtocol(format!("parse JSON: {e}")))?
+                        .map_err(|e| AsrError::Protocol(format!("parse JSON: {e}")))?
                 } else {
                     Value::Null
                 };
@@ -268,10 +268,16 @@ impl DoubaoWsProvider {
                     message: error_msg,
                 })
             }
-            _ => Err(KoeError::AsrProtocol(format!(
+            _ => Err(AsrError::Protocol(format!(
                 "unknown message type: {msg_type:#06b}"
             ))),
         }
+    }
+}
+
+impl Default for DoubaoWsProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -290,12 +296,11 @@ impl AsrProvider for DoubaoWsProvider {
             self.connect_id
         );
 
-        // Build request with auth headers
         let mut request = config
             .url
             .as_str()
             .into_client_request()
-            .map_err(|e| KoeError::AsrConnection(format!("invalid URL: {e}")))?;
+            .map_err(|e| AsrError::Connection(format!("invalid URL: {e}")))?;
 
         let headers = request.headers_mut();
         headers.insert(
@@ -303,39 +308,37 @@ impl AsrProvider for DoubaoWsProvider {
             config
                 .app_key
                 .parse()
-                .map_err(|_| KoeError::AsrConnection("invalid app_key".into()))?,
+                .map_err(|_| AsrError::Connection("invalid app_key".into()))?,
         );
         headers.insert(
             "X-Api-Access-Key",
             config
                 .access_key
                 .parse()
-                .map_err(|_| KoeError::AsrConnection("invalid access_key".into()))?,
+                .map_err(|_| AsrError::Connection("invalid access_key".into()))?,
         );
         headers.insert(
             "X-Api-Resource-Id",
             config
                 .resource_id
                 .parse()
-                .map_err(|_| KoeError::AsrConnection("invalid resource_id".into()))?,
+                .map_err(|_| AsrError::Connection("invalid resource_id".into()))?,
         );
         headers.insert(
             "X-Api-Connect-Id",
             self.connect_id
                 .parse()
-                .map_err(|_| KoeError::AsrConnection("invalid connect_id".into()))?,
+                .map_err(|_| AsrError::Connection("invalid connect_id".into()))?,
         );
 
-        // Connect WebSocket
         let (ws_stream, response) = timeout(connect_timeout, async {
             connect_async(request)
                 .await
-                .map_err(|e| KoeError::AsrConnection(e.to_string()))
+                .map_err(|e| AsrError::Connection(e.to_string()))
         })
         .await
-        .map_err(|_| KoeError::AsrConnection("connection timed out".into()))??;
+        .map_err(|_| AsrError::Connection("connection timed out".into()))??;
 
-        // Capture logid from response headers
         if let Some(logid) = response.headers().get("X-Tt-Logid") {
             if let Ok(s) = logid.to_str() {
                 self.logid = Some(s.to_string());
@@ -345,12 +348,11 @@ impl AsrProvider for DoubaoWsProvider {
 
         self.ws = Some(ws_stream);
 
-        // Send full client request
         let full_request = self.build_full_client_request(config)?;
         if let Some(ref mut ws) = self.ws {
             ws.send(Message::Binary(full_request.into()))
                 .await
-                .map_err(|e| KoeError::AsrConnection(format!("send full request: {e}")))?;
+                .map_err(|e| AsrError::Connection(format!("send full request: {e}")))?;
         }
 
         log::info!("ASR connected, full client request sent");
@@ -362,18 +364,17 @@ impl AsrProvider for DoubaoWsProvider {
         if let Some(ref mut ws) = self.ws {
             ws.send(Message::Binary(binary_frame.into()))
                 .await
-                .map_err(|e| KoeError::AsrProtocol(format!("send audio: {e}")))?;
+                .map_err(|e| AsrError::Protocol(format!("send audio: {e}")))?;
         }
         Ok(())
     }
 
     async fn finish_input(&mut self) -> Result<()> {
-        // Send last audio packet (empty payload with last-packet flag)
         let last_frame = Self::build_audio_frame(&[], true)?;
         if let Some(ref mut ws) = self.ws {
             ws.send(Message::Binary(last_frame.into()))
                 .await
-                .map_err(|e| KoeError::AsrProtocol(format!("send finish: {e}")))?;
+                .map_err(|e| AsrError::Protocol(format!("send finish: {e}")))?;
         }
         log::debug!("ASR finish signal sent (last packet)");
         Ok(())
@@ -382,62 +383,53 @@ impl AsrProvider for DoubaoWsProvider {
     async fn next_event(&mut self) -> Result<AsrEvent> {
         if let Some(ref mut ws) = self.ws {
             match ws.next().await {
-                Some(Ok(Message::Binary(data))) => {
-                    match Self::parse_server_response(&data)? {
-                        ServerMessage::Response { json, is_last } => {
-                            // Extract text from result
-                            let text = json
-                                .get("result")
-                                .and_then(|r| r.get("text"))
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("")
-                                .to_string();
+                Some(Ok(Message::Binary(data))) => match Self::parse_server_response(&data)? {
+                    ServerMessage::Response { json, is_last } => {
+                        let text = json
+                            .get("result")
+                            .and_then(|r| r.get("text"))
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .to_string();
 
-                            // Check if any utterance has definite=true
-                            // (two-pass re-recognized with higher accuracy)
-                            let has_definite = json
-                                .get("result")
-                                .and_then(|r| r.get("utterances"))
-                                .and_then(|u| u.as_array())
-                                .map(|utterances| {
-                                    utterances.iter().any(|u| {
-                                        u.get("definite")
-                                            .and_then(|d| d.as_bool())
-                                            .unwrap_or(false)
-                                    })
+                        let has_definite = json
+                            .get("result")
+                            .and_then(|r| r.get("utterances"))
+                            .and_then(|u| u.as_array())
+                            .map(|utterances| {
+                                utterances.iter().any(|u| {
+                                    u.get("definite")
+                                        .and_then(|d| d.as_bool())
+                                        .unwrap_or(false)
                                 })
-                                .unwrap_or(false);
+                            })
+                            .unwrap_or(false);
 
-                            if is_last {
-                                Ok(AsrEvent::Final(text))
-                            } else if has_definite {
-                                // Definite: confirmed segment from two-pass recognition
-                                Ok(AsrEvent::Definite(text))
-                            } else {
-                                Ok(AsrEvent::Interim(text))
-                            }
-                        }
-                        ServerMessage::Error { code, message } => {
-                            log::error!(
-                                "ASR error: code={code}, message={message}, logid={:?}",
-                                self.logid
-                            );
-                            Err(KoeError::AsrProtocol(format!(
-                                "server error {code}: {message}"
-                            )))
+                        if is_last {
+                            Ok(AsrEvent::Final(text))
+                        } else if has_definite {
+                            Ok(AsrEvent::Definite(text))
+                        } else {
+                            Ok(AsrEvent::Interim(text))
                         }
                     }
-                }
+                    ServerMessage::Error { code, message } => {
+                        log::error!(
+                            "ASR error: code={code}, message={message}, logid={:?}",
+                            self.logid
+                        );
+                        Err(AsrError::Protocol(format!(
+                            "server error {code}: {message}"
+                        )))
+                    }
+                },
                 Some(Ok(Message::Close(_))) => Ok(AsrEvent::Closed),
-                Some(Ok(_)) => {
-                    // Skip text/ping/pong frames
-                    Ok(AsrEvent::Interim(String::new()))
-                }
-                Some(Err(e)) => Err(KoeError::AsrProtocol(e.to_string())),
+                Some(Ok(_)) => Ok(AsrEvent::Interim(String::new())),
+                Some(Err(e)) => Err(AsrError::Protocol(e.to_string())),
                 None => Ok(AsrEvent::Closed),
             }
         } else {
-            Err(KoeError::AsrConnection("not connected".into()))
+            Err(AsrError::Connection("not connected".into()))
         }
     }
 

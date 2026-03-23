@@ -1,4 +1,3 @@
-pub mod asr;
 pub mod audio_buffer;
 pub mod config;
 pub mod dictionary;
@@ -8,10 +7,7 @@ pub mod llm;
 pub mod prompt;
 pub mod session;
 pub mod telemetry;
-pub mod transcript;
 
-use crate::asr::doubao_ws::DoubaoWsProvider;
-use crate::asr::{AsrConfig, AsrEvent, AsrProvider};
 use crate::config::Config;
 use crate::ffi::{
     cstr_to_str, invoke_final_text_ready, invoke_session_error, invoke_session_ready,
@@ -21,7 +17,7 @@ use crate::ffi::{
 use crate::llm::openai_compatible::OpenAiCompatibleProvider;
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
-use crate::transcript::TranscriptAggregator;
+use koe_asr::{AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, TranscriptAggregator};
 
 use std::ffi::c_char;
 use std::sync::{Arc, Mutex};

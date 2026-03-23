@@ -1,13 +1,11 @@
 /// Aggregates ASR interim, definite, and final results into a single final transcript.
-/// Also collects interim revision history to help LLM identify uncertain segments.
+/// Also collects interim revision history to help identify uncertain segments.
 pub struct TranscriptAggregator {
     interim_text: String,
-    /// Accumulated text from definite (two-pass confirmed) segments.
     definite_text: String,
     final_text: String,
     has_final: bool,
     has_definite: bool,
-    /// Unique interim texts in order of appearance (deduped consecutive identical ones).
     interim_history: Vec<String>,
 }
 
@@ -26,7 +24,6 @@ impl TranscriptAggregator {
     /// Update with an interim result (replaces previous interim).
     pub fn update_interim(&mut self, text: &str) {
         if !text.is_empty() {
-            // Only record if different from the last interim
             if self.interim_history.last().map(|s| s.as_str()) != Some(text) {
                 self.interim_history.push(text.to_string());
             }
@@ -35,8 +32,6 @@ impl TranscriptAggregator {
     }
 
     /// Update with a definite result from two-pass recognition.
-    /// The full text field from a response containing definite utterances
-    /// includes all confirmed segments so far — use it as the definite baseline.
     pub fn update_definite(&mut self, text: &str) {
         if !text.is_empty() {
             self.has_definite = true;
@@ -74,11 +69,13 @@ impl TranscriptAggregator {
     }
 
     pub fn has_any_text(&self) -> bool {
-        !self.final_text.is_empty() || !self.definite_text.is_empty() || !self.interim_text.is_empty()
+        !self.final_text.is_empty()
+            || !self.definite_text.is_empty()
+            || !self.interim_text.is_empty()
     }
 
-    /// Return the interim revision history for LLM context.
-    /// Keeps only the last `max_entries` to avoid bloating the prompt.
+    /// Return the interim revision history.
+    /// Keeps only the last `max_entries` to avoid bloating prompts.
     pub fn interim_history(&self, max_entries: usize) -> &[String] {
         let len = self.interim_history.len();
         if len <= max_entries {
@@ -86,5 +83,11 @@ impl TranscriptAggregator {
         } else {
             &self.interim_history[len - max_entries..]
         }
+    }
+}
+
+impl Default for TranscriptAggregator {
+    fn default() -> Self {
+        Self::new()
     }
 }
