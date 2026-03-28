@@ -224,6 +224,23 @@ static NSString *yamlWrite(NSString *yaml, NSString *keyPath, NSString *value) {
         }
     }
 
+    // If we partially matched (e.g. found "asr:" but not "qwen:" inside it),
+    // insert at the end of the deepest matched section instead of end-of-file.
+    if (matchedDepth > 0 && matchedDepth < sectionCount) {
+        NSInteger deepestLine = lastMatchedSectionLine[matchedDepth - 1];
+        NSInteger deepestIndent = requiredIndent[matchedDepth - 1];
+        insertIdx = deepestLine + 1;
+        while (insertIdx < (NSInteger)lines.count) {
+            NSString *nextLine = lines[insertIdx];
+            NSString *nextTrimmed = [nextLine stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (nextTrimmed.length > 0 && ![nextTrimmed hasPrefix:@"#"]) {
+                NSInteger nextIndent = yamlIndentLevel(nextLine);
+                if (nextIndent <= deepestIndent) break;
+            }
+            insertIdx++;
+        }
+    }
+
     // Create missing parent sections
     for (NSInteger d = matchedDepth; d < sectionCount; d++) {
         NSMutableString *secIndent = [NSMutableString string];
