@@ -10,6 +10,9 @@ publish = false
 repository = "https://github.com/erning/koe"
 rust-version = "1.85"
 
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
 [workspace.dependencies]
 # shared
 async-trait = "0.1"
