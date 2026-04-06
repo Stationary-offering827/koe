@@ -7,6 +7,7 @@ typedef void (^SPPermissionCheckCompletion)(BOOL micGranted, BOOL accessibilityG
 - (void)checkAllPermissionsWithCompletion:(SPPermissionCheckCompletion)completion;
 - (BOOL)isMicrophoneGranted;
 - (BOOL)isAccessibilityGranted;
+- (void)requestAccessibilityPermission;
 - (BOOL)isInputMonitoringGranted;
 
 /// Check whether speech recognition permission has been granted.

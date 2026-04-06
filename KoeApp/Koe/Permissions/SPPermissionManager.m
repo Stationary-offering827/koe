@@ -9,6 +9,7 @@
 - (void)checkAllPermissionsWithCompletion:(SPPermissionCheckCompletion)completion {
     // Check microphone permission (async)
     [self requestMicrophonePermissionWithCompletion:^(BOOL micGranted) {
+        [self requestAccessibilityPermission];
         BOOL accessibility = [self isAccessibilityGranted];
         BOOL inputMonitoring = [self isInputMonitoringGranted];
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -36,9 +37,13 @@
 }
 
 - (BOOL)isAccessibilityGranted {
-    // AXIsProcessTrustedWithOptions with prompt
-    NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
+    NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @NO};
     return AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+}
+
+- (void)requestAccessibilityPermission {
+    NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
+    AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
 }
 
 static CGEventRef inputMonitoringProbeCallback(CGEventTapProxy proxy,
