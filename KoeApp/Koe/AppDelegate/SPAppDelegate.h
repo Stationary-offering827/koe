@@ -20,6 +20,11 @@
 
 @interface SPAppDelegate : NSObject <NSApplicationDelegate, SPRustBridgeDelegate, SPStatusBarDelegate, SPHotkeyMonitorDelegate, SPSetupWizardDelegate>
 
+/// Set to YES once the quit process has been initiated. Guards all
+/// session, paste, and callback paths against late execution during
+/// the run-loop draining that happens inside [NSApp terminate:].
+@property (nonatomic, assign) BOOL quitting;
+
 @property (nonatomic, strong) SPPermissionManager *permissionManager;
 @property (nonatomic, strong) SPHotkeyMonitor *hotkeyMonitor;
 @property (nonatomic, strong) SPAudioCaptureManager *audioCaptureManager;

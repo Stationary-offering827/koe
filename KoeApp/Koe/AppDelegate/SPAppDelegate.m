@@ -129,6 +129,9 @@
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
     NSLog(@"[Koe] Application terminating...");
+    self.quitting = YES;
+    [self cancelPendingSessionEnd];
+    [self.audioCaptureManager stopCapture];
     if (self.configWatcher) {
         dispatch_source_cancel(self.configWatcher);
         self.configWatcher = nil;
@@ -329,6 +332,7 @@
 }
 
 - (void)rustBridgeDidReceiveFinalText:(NSString *)text {
+    if (self.quitting) return;
     NSLog(@"[Koe] Final text received (%lu chars)", (unsigned long)text.length);
 
     // Record history
@@ -365,6 +369,7 @@
 }
 
 - (void)rustBridgeDidEncounterError:(NSString *)message {
+    if (self.quitting) return;
     NSLog(@"[Koe] Session error: %@", message);
     self.showingError = YES;
     [self.cuePlayer playError];
@@ -436,7 +441,7 @@
 }
 
 - (void)rustBridgeDidChangeState:(NSString *)state {
-    if (self.showingError) return;
+    if (self.quitting || self.showingError) return;
     [self.statusBarManager updateState:state];
     [self.overlayPanel updateState:state];
 }
@@ -489,12 +494,20 @@
     // and allowing FlagsChanged events through the NSEvent monitor path
     // before stop() has a chance to set running=NO.
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.quitting) return;
         self.hotkeyMonitor.suspended = NO;
     });
 }
 
 - (void)statusBarDidSelectQuit {
+    self.quitting = YES;
     self.hotkeyMonitor.suspended = YES;
+
+    // Cancel any pending session-end block so it cannot trigger a paste
+    // during the run-loop draining inside [NSApp terminate:].
+    [self cancelPendingSessionEnd];
+    [self.audioCaptureManager stopCapture];
+    [self.rustBridge cancelSession];
     [self.hotkeyMonitor stop];
     [NSApp terminate:nil];
 }

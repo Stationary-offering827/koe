@@ -41,13 +41,16 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     SPHotkeyMonitor *monitor = (__bridge SPHotkeyMonitor *)userInfo;
 
     if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
-        if (monitor.eventTap) {
+        // Only re-enable the tap if we are still running.  During teardown
+        // the tap may fire one last time — re-enabling it would race with
+        // the CFRelease in -stop.
+        if (monitor.running && monitor.eventTap) {
             CGEventTapEnable(monitor.eventTap, true);
         }
         return event;
     }
 
-    if (monitor.suspended) return event;
+    if (!monitor.running || monitor.suspended) return event;
 
     if (type == kCGEventFlagsChanged) {
         [monitor handleFlagsChangedEvent:event];
@@ -172,7 +175,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 }
 
 - (void)handleNSEvent:(NSEvent *)event {
-    if (self.suspended) return;
+    if (!self.running || self.suspended) return;
 
     if (event.type == NSEventTypeFlagsChanged) {
         NSUInteger flags = event.modifierFlags;
@@ -220,6 +223,10 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 }
 
 - (void)stop {
+    // Set running=NO first so that any in-flight callbacks or dispatched
+    // blocks see the flag before we tear down the monitors.
+    self.running = NO;
+
     if (self.globalMonitorRef) {
         [NSEvent removeMonitor:self.globalMonitorRef];
         self.globalMonitorRef = nil;
@@ -241,7 +248,6 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
     [self cancelHoldTimer];
     self.state = SPHotkeyStateIdle;
-    self.running = NO;
     NSLog(@"[Koe] Hotkey monitor stopped");
 }
 
