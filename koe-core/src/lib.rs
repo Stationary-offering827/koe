@@ -672,7 +672,7 @@ async fn run_session(
                     }
                     Ok(AsrEvent::Final(text)) => {
                         aggregator.update_final(&text);
-                        invoke_interim_text(session_token,&text);
+                        invoke_interim_text(session_token, aggregator.best_text());
                     }
                     Ok(AsrEvent::Closed) => {
                         asr_done = true;
@@ -896,7 +896,7 @@ async fn wait_for_final(
         match asr.next_event().await {
             Ok(AsrEvent::Final(text)) => {
                 aggregator.update_final(&text);
-                invoke_interim_text(session_token,&text);
+                invoke_interim_text(session_token, aggregator.best_text());
                 return None;
             }
             Ok(AsrEvent::Interim(text)) => {

@@ -617,6 +617,12 @@ pub struct DoubaoImeProvider {
     frame_index: u32,
     timestamp_ms: u64,
     session_finished: bool,
+    /// Accumulated text from completed VAD segments.
+    confirmed_text: String,
+    /// Raw text from the most recent API response (current segment only,
+    /// without the `confirmed_text` prefix). Used to detect segment resets
+    /// when the API suddenly returns much shorter text.
+    last_segment_text: String,
 }
 
 impl DoubaoImeProvider {
@@ -631,6 +637,8 @@ impl DoubaoImeProvider {
             frame_index: 0,
             timestamp_ms: 0,
             session_finished: false,
+            confirmed_text: String::new(),
+            last_segment_text: String::new(),
         }
     }
 
@@ -734,6 +742,8 @@ impl AsrProvider for DoubaoImeProvider {
         self.opus_encoder = Some(OpusEncoder::new()?);
         self.pcm_buffer.clear();
         self.frame_index = 0;
+        self.confirmed_text.clear();
+        self.last_segment_text.clear();
         self.timestamp_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -952,7 +962,10 @@ impl AsrProvider for DoubaoImeProvider {
                     return Ok(AsrEvent::Connected); // VAD start, no text yet
                 }
 
-                // Extract text and determine type
+                // Extract text from all results (segments) by concatenating,
+                // and use the LAST result's flags for event type determination.
+                // The results array may contain multiple segments: earlier ones
+                // are already confirmed, the last one is the active segment.
                 let mut text = String::new();
                 let mut is_interim = true;
                 let mut is_vad_finished = false;
@@ -961,41 +974,65 @@ impl AsrProvider for DoubaoImeProvider {
                 for r in results {
                     if let Some(t) = r.get("text").and_then(|t| t.as_str()) {
                         if !t.is_empty() {
-                            text = t.to_string();
+                            text.push_str(t);
                         }
                     }
-                    if r.get("is_interim").and_then(|v| v.as_bool()) == Some(false) {
-                        is_interim = false;
-                    }
-                    if r.get("is_vad_finished").and_then(|v| v.as_bool()) == Some(true) {
-                        is_vad_finished = true;
-                    }
-                    if r.get("extra")
+                    // Track flags from the last result (most recent segment)
+                    is_interim = r.get("is_interim").and_then(|v| v.as_bool()).unwrap_or(true);
+                    is_vad_finished =
+                        r.get("is_vad_finished").and_then(|v| v.as_bool()).unwrap_or(false);
+                    nonstream_result = r
+                        .get("extra")
                         .and_then(|e| e.get("nonstream_result"))
                         .and_then(|v| v.as_bool())
-                        == Some(true)
-                    {
-                        nonstream_result = true;
-                    }
+                        .unwrap_or(false);
                 }
 
                 if text.is_empty() {
                     return Ok(AsrEvent::Connected); // empty result
                 }
 
-                // Final result
-                if nonstream_result || (!is_interim && is_vad_finished) {
-                    log::info!("[DoubaoIME] Final: {text}");
-                    return Ok(AsrEvent::Final(text));
+                // ── Segment-reset detection ──────────────────────────
+                // The API resets text when a new VAD segment begins.
+                // Detect this by checking if the text suddenly became
+                // much shorter than what we had, and isn't a prefix of
+                // the previous text (which would indicate a correction).
+                if !self.last_segment_text.is_empty()
+                    && text.len() < self.last_segment_text.len() / 2
+                    && !self.last_segment_text.starts_with(&text)
+                {
+                    // New segment started — save previous segment text.
+                    log::info!(
+                        "[DoubaoIME] Segment reset detected ({} -> {} chars), \
+                         preserving previous segment",
+                        self.last_segment_text.len(),
+                        text.len(),
+                    );
+                    self.confirmed_text.push_str(&self.last_segment_text);
                 }
 
-                // Definite (non-interim but not yet vad_finished)
+                // Track raw segment text for next comparison.
+                self.last_segment_text = text.clone();
+
+                // Prepend confirmed text from earlier segments.
+                let full = if self.confirmed_text.is_empty() {
+                    text
+                } else {
+                    format!("{}{}", self.confirmed_text, text)
+                };
+
+                // Non-streaming (third-pass) or definite (second-pass) result
+                if nonstream_result || (!is_interim && is_vad_finished) {
+                    log::info!("[DoubaoIME] Final: {full}");
+                    return Ok(AsrEvent::Final(full));
+                }
+
                 if !is_interim {
-                    return Ok(AsrEvent::Definite(text));
+                    return Ok(AsrEvent::Definite(full));
                 }
 
                 // Interim
-                Ok(AsrEvent::Interim(text))
+                Ok(AsrEvent::Interim(full))
             }
             Some(Ok(Message::Close(_))) => {
                 self.session_finished = true;
