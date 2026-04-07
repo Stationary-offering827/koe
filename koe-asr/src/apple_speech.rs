@@ -128,8 +128,7 @@ impl crate::provider::AsrProvider for AppleSpeechProvider {
         let locale = CString::new(self.config.locale.clone())
             .map_err(|_| AsrError::Connection("invalid locale string".into()))?;
 
-        let ctx_strings_blob =
-            Self::serialize_contextual_strings(&self.config.contextual_strings);
+        let ctx_strings_blob = Self::serialize_contextual_strings(&self.config.contextual_strings);
 
         // Create event channel
         let (tx, rx) = tokio::sync::mpsc::channel::<AsrEvent>(256);
@@ -177,7 +176,11 @@ impl crate::provider::AsrProvider for AppleSpeechProvider {
     async fn send_audio(&mut self, frame: &[u8]) -> Result<()> {
         // Pass raw PCM16 LE bytes directly; Swift side converts to Float32
         unsafe {
-            koe_apple_speech_feed_audio(frame.as_ptr(), frame.len() as u32, self.session_generation);
+            koe_apple_speech_feed_audio(
+                frame.as_ptr(),
+                frame.len() as u32,
+                self.session_generation,
+            );
         }
         Ok(())
     }

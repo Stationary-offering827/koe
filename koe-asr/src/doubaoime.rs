@@ -151,16 +151,13 @@ mod proto {
                         2 => {} // task_id, skip
                         3 => {} // service_name, skip
                         4 => {
-                            resp.message_type =
-                                String::from_utf8_lossy(field_data).into_owned();
+                            resp.message_type = String::from_utf8_lossy(field_data).into_owned();
                         }
                         6 => {
-                            resp.status_message =
-                                String::from_utf8_lossy(field_data).into_owned();
+                            resp.status_message = String::from_utf8_lossy(field_data).into_owned();
                         }
                         7 => {
-                            resp.result_json =
-                                String::from_utf8_lossy(field_data).into_owned();
+                            resp.result_json = String::from_utf8_lossy(field_data).into_owned();
                         }
                         _ => {} // skip unknown fields
                     }
@@ -426,11 +423,7 @@ async fn register_device(http: &reqwest::Client) -> Result<DeviceCredentials> {
     })
 }
 
-async fn get_asr_token(
-    http: &reqwest::Client,
-    device_id: &str,
-    cdid: &str,
-) -> Result<String> {
+async fn get_asr_token(http: &reqwest::Client, device_id: &str, cdid: &str) -> Result<String> {
     use md5::{Digest, Md5};
 
     let body_str = "body=null";
@@ -562,9 +555,8 @@ impl OpusEncoder {
         // PCM is 16-bit mono, so samples = bytes / 2
         let samples = pcm.len() / 2;
         // Reinterpret as i16 slice
-        let pcm_i16: &[i16] = unsafe {
-            std::slice::from_raw_parts(pcm.as_ptr() as *const i16, samples)
-        };
+        let pcm_i16: &[i16] =
+            unsafe { std::slice::from_raw_parts(pcm.as_ptr() as *const i16, samples) };
 
         let mut output = vec![0u8; 4000]; // max opus frame size
         let encoded_len = self
@@ -772,8 +764,7 @@ impl AsrProvider for DoubaoImeProvider {
             );
             headers.insert(
                 "proto-version",
-                "v2"
-                    .parse()
+                "v2".parse()
                     .map_err(|_| AsrError::Connection("invalid header".into()))?,
             );
             headers.insert(
@@ -914,7 +905,10 @@ impl AsrProvider for DoubaoImeProvider {
 
                 log::debug!(
                     "[DoubaoIME] Response: type={:?}, status={}, msg={:?}, result_json_len={}",
-                    resp.message_type, resp.status_code, resp.status_message, resp.result_json.len()
+                    resp.message_type,
+                    resp.status_code,
+                    resp.status_message,
+                    resp.result_json.len()
                 );
                 if !resp.result_json.is_empty() {
                     log::debug!("[DoubaoIME] result_json: {}", resp.result_json);
@@ -978,9 +972,14 @@ impl AsrProvider for DoubaoImeProvider {
                         }
                     }
                     // Track flags from the last result (most recent segment)
-                    is_interim = r.get("is_interim").and_then(|v| v.as_bool()).unwrap_or(true);
-                    is_vad_finished =
-                        r.get("is_vad_finished").and_then(|v| v.as_bool()).unwrap_or(false);
+                    is_interim = r
+                        .get("is_interim")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    is_vad_finished = r
+                        .get("is_vad_finished")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     nonstream_result = r
                         .get("extra")
                         .and_then(|e| e.get("nonstream_result"))

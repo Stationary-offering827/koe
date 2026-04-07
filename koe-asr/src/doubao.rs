@@ -340,9 +340,9 @@ impl AsrProvider for DoubaoWsProvider {
                     .map_err(|_| AsrError::Connection(format!("invalid header name: {key}")))?;
                 headers.insert(
                     header_name,
-                    value
-                        .parse()
-                        .map_err(|_| AsrError::Connection(format!("invalid header value for {key}")))?,
+                    value.parse().map_err(|_| {
+                        AsrError::Connection(format!("invalid header value for {key}"))
+                    })?,
                 );
             }
         }
@@ -419,9 +419,7 @@ impl AsrProvider for DoubaoWsProvider {
                             .and_then(|u| u.as_array())
                             .map(|utterances| {
                                 utterances.iter().any(|u| {
-                                    u.get("definite")
-                                        .and_then(|d| d.as_bool())
-                                        .unwrap_or(false)
+                                    u.get("definite").and_then(|d| d.as_bool()).unwrap_or(false)
                                 })
                             })
                             .unwrap_or(false);

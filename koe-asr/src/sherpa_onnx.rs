@@ -142,9 +142,7 @@ impl crate::provider::AsrProvider for SherpaOnnxProvider {
 
 /// Find encoder/decoder/joiner/tokens files in the model directory.
 /// Prefers int8 quantized models when available (smaller, faster on CPU).
-fn find_model_files(
-    model_dir: &std::path::Path,
-) -> Result<(String, String, String, String)> {
+fn find_model_files(model_dir: &std::path::Path) -> Result<(String, String, String, String)> {
     let entries: Vec<_> = std::fs::read_dir(model_dir)
         .map_err(|e| AsrError::Connection(format!("read model dir: {e}")))?
         .filter_map(|e| e.ok())

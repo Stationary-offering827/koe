@@ -961,8 +961,13 @@ fn atomic_write_file(path: &Path, data: &str) -> Result<()> {
     let tmp = path.with_extension("yaml.tmp");
     std::fs::write(&tmp, data)
         .map_err(|e| KoeError::Config(format!("write {}: {e}", tmp.display())))?;
-    std::fs::rename(&tmp, path)
-        .map_err(|e| KoeError::Config(format!("rename {} -> {}: {e}", tmp.display(), path.display())))?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        KoeError::Config(format!(
+            "rename {} -> {}: {e}",
+            tmp.display(),
+            path.display()
+        ))
+    })?;
     Ok(())
 }
 
@@ -1252,7 +1257,10 @@ mod tests {
         // --- corrupted YAML should fail ---
         let tmp1 = std::env::temp_dir().join(format!(
             "koe-test-bad-{}",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let koe_dir1 = tmp1.join(".koe");
         fs::create_dir_all(&koe_dir1).unwrap();
@@ -1262,12 +1270,18 @@ mod tests {
         let bad_result = config_set("test.key", "value");
         unsafe { std::env::set_var("HOME", &orig_home) };
         let _ = fs::remove_dir_all(&tmp1);
-        assert!(bad_result.is_err(), "config_set should fail on corrupted YAML");
+        assert!(
+            bad_result.is_err(),
+            "config_set should fail on corrupted YAML"
+        );
 
         // --- valid YAML should succeed ---
         let tmp2 = std::env::temp_dir().join(format!(
             "koe-test-ok-{}",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let koe_dir2 = tmp2.join(".koe");
         fs::create_dir_all(&koe_dir2).unwrap();

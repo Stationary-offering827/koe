@@ -70,7 +70,7 @@ impl QwenAsrProvider {
     }
 
     fn build_audio_append(audio_data: &[u8]) -> ClientEvent {
-        use base64::{Engine, engine::general_purpose::STANDARD};
+        use base64::{engine::general_purpose::STANDARD, Engine};
         ClientEvent {
             event_id: format!("event_{}", Uuid::new_v4()),
             event_type: "input_audio_buffer.append".to_string(),
@@ -239,9 +239,9 @@ impl AsrProvider for QwenAsrProvider {
                     .map_err(|_| AsrError::Connection(format!("invalid header name: {key}")))?;
                 request.headers_mut().insert(
                     header_name,
-                    value
-                        .parse()
-                        .map_err(|_| AsrError::Connection(format!("invalid header value for {key}")))?,
+                    value.parse().map_err(|_| {
+                        AsrError::Connection(format!("invalid header value for {key}"))
+                    })?,
                 );
             }
         }
@@ -342,10 +342,7 @@ impl AsrProvider for QwenAsrProvider {
                 }
                 Some(Ok(Message::Close(_))) => return Ok(AsrEvent::Closed),
                 Some(Ok(Message::Binary(data))) => {
-                    log::debug!(
-                        "[Qwen ASR] Skipping binary frame ({} bytes)",
-                        data.len()
-                    );
+                    log::debug!("[Qwen ASR] Skipping binary frame ({} bytes)", data.len());
                 }
                 Some(Ok(frame)) => {
                     log::debug!("[Qwen ASR] Skipping frame: {:?}", frame);

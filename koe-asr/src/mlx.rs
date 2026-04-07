@@ -143,9 +143,7 @@ impl crate::provider::AsrProvider for MlxProvider {
         };
         if gen == 0 {
             self.reclaim_sender();
-            return Err(AsrError::Connection(
-                "failed to start MLX session".into(),
-            ));
+            return Err(AsrError::Connection("failed to start MLX session".into()));
         }
         self.session_generation = gen;
 
@@ -159,7 +157,11 @@ impl crate::provider::AsrProvider for MlxProvider {
             .collect();
 
         unsafe {
-            koe_mlx_feed_audio(samples.as_ptr(), samples.len() as u32, self.session_generation);
+            koe_mlx_feed_audio(
+                samples.as_ptr(),
+                samples.len() as u32,
+                self.session_generation,
+            );
         }
         Ok(())
     }

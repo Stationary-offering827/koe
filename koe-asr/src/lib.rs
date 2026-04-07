@@ -38,6 +38,8 @@
 //! # }
 //! ```
 
+#[cfg(feature = "apple-speech")]
+pub mod apple_speech;
 pub mod config;
 pub mod doubao;
 pub mod doubaoime;
@@ -45,25 +47,23 @@ pub mod error;
 pub mod event;
 #[cfg(feature = "mlx")]
 pub mod mlx;
-#[cfg(feature = "apple-speech")]
-pub mod apple_speech;
 pub mod provider;
 pub mod qwen;
 #[cfg(feature = "sherpa-onnx")]
 pub mod sherpa_onnx;
 pub mod transcript;
 
-pub use qwen::QwenAsrProvider;
-#[cfg(feature = "mlx")]
-pub use mlx::{MlxConfig, MlxProvider};
 #[cfg(feature = "apple-speech")]
 pub use apple_speech::{AppleSpeechConfig, AppleSpeechProvider};
-#[cfg(feature = "sherpa-onnx")]
-pub use sherpa_onnx::{SherpaOnnxConfig, SherpaOnnxProvider};
 pub use config::AsrConfig;
 pub use doubao::DoubaoWsProvider;
 pub use doubaoime::DoubaoImeProvider;
 pub use error::AsrError;
 pub use event::AsrEvent;
+#[cfg(feature = "mlx")]
+pub use mlx::{MlxConfig, MlxProvider};
 pub use provider::AsrProvider;
+pub use qwen::QwenAsrProvider;
+#[cfg(feature = "sherpa-onnx")]
+pub use sherpa_onnx::{SherpaOnnxConfig, SherpaOnnxProvider};
 pub use transcript::TranscriptAggregator;

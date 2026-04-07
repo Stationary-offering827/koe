@@ -15,21 +15,21 @@ use crate::ffi::{
     invoke_session_ready, invoke_session_warning, invoke_state_changed, SPCallbacks,
     SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
 };
+#[cfg(feature = "mlx")]
+use crate::llm::mlx::MlxLlmProvider;
 use crate::llm::openai_compatible::{
     build_http_client, OpenAiCompatibleProvider, LLM_HTTP_POOL_IDLE_TIMEOUT,
 };
-#[cfg(feature = "mlx")]
-use crate::llm::mlx::MlxLlmProvider;
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
+#[cfg(feature = "apple-speech")]
+use koe_asr::{AppleSpeechConfig, AppleSpeechProvider};
 use koe_asr::{
     AsrConfig, AsrEvent, AsrProvider, DoubaoImeProvider, DoubaoWsProvider, QwenAsrProvider,
     TranscriptAggregator,
 };
 #[cfg(feature = "mlx")]
 use koe_asr::{MlxConfig, MlxProvider};
-#[cfg(feature = "apple-speech")]
-use koe_asr::{AppleSpeechConfig, AppleSpeechProvider};
 #[cfg(feature = "sherpa-onnx")]
 use koe_asr::{SherpaOnnxConfig, SherpaOnnxProvider};
 use reqwest::Client;
@@ -622,15 +622,15 @@ async fn run_session(
             let _ = session.transition(recording_state);
         }
     }
-    invoke_state_changed(session_token,&recording_state.to_string());
+    invoke_state_changed(session_token, &recording_state.to_string());
     invoke_session_ready(session_token);
 
     // --- Connect ASR ---
     log::info!("[{session_id}] Using ASR provider: {asr_provider}");
     if let Err(e) = asr.connect(&asr_config).await {
         log::error!("[{session_id}] ASR connection failed: {e}");
-        invoke_session_error(session_token,&e.to_string());
-        invoke_state_changed(session_token,"failed");
+        invoke_session_error(session_token, &e.to_string());
+        invoke_state_changed(session_token, "failed");
         cleanup_session(&session_arc);
         return;
     }
@@ -700,9 +700,9 @@ async fn run_session(
     if cancelled.load(Ordering::SeqCst) {
         log::info!("[{session_id}] session cancelled by user");
         let _ = asr.close().await;
-        invoke_state_changed(session_token,"cancelled");
+        invoke_state_changed(session_token, "cancelled");
         cleanup_session(&session_arc);
-        invoke_state_changed(session_token,"idle");
+        invoke_state_changed(session_token, "idle");
         return;
     }
 
@@ -713,7 +713,7 @@ async fn run_session(
             let _ = session.transition(SessionState::FinalizingAsr);
         }
     }
-    invoke_state_changed(session_token,"finalizing_asr");
+    invoke_state_changed(session_token, "finalizing_asr");
 
     // Wait for final result if we haven't received one yet
     if !aggregator.has_final_result() && !asr_done {
@@ -775,9 +775,9 @@ async fn run_session(
     // aborted old session exits quickly when a new session has started.
     if cancelled.load(Ordering::SeqCst) {
         log::info!("[{session_id}] session cancelled before LLM correction");
-        invoke_state_changed(session_token,"cancelled");
+        invoke_state_changed(session_token, "cancelled");
         cleanup_session(&session_arc);
-        invoke_state_changed(session_token,"idle");
+        invoke_state_changed(session_token, "idle");
         return;
     }
 
@@ -790,7 +790,7 @@ async fn run_session(
                 let _ = session.transition(SessionState::Correcting);
             }
         }
-        invoke_state_changed(session_token,"correcting");
+        invoke_state_changed(session_token, "correcting");
 
         let llm: Box<dyn LlmProvider> = match llm_config.provider.as_str() {
             #[cfg(feature = "mlx")]
@@ -807,26 +807,27 @@ async fn run_session(
                     llm_config.timeout_ms,
                 ))
             }
-            _ => {
-                Box::new(OpenAiCompatibleProvider::new(
-                    llm_http_client,
-                    llm_config.base_url,
-                    llm_config.api_key,
-                    llm_config.model,
-                    llm_config.temperature,
-                    llm_config.top_p,
-                    llm_config.max_output_tokens,
-                    llm_config.max_token_parameter,
-                    llm_config.no_reasoning_control,
-                ))
-            }
+            _ => Box::new(OpenAiCompatibleProvider::new(
+                llm_http_client,
+                llm_config.base_url,
+                llm_config.api_key,
+                llm_config.model,
+                llm_config.temperature,
+                llm_config.top_p,
+                llm_config.max_output_tokens,
+                llm_config.max_token_parameter,
+                llm_config.no_reasoning_control,
+            )),
         };
 
         // Filter dictionary candidates for prompt
         let candidates =
             prompt::filter_dictionary_candidates(&dictionary, &asr_text, dictionary_max_candidates);
 
-        log::info!("[{session_id}] LLM request — asr_text_len: {}", asr_text.len());
+        log::info!(
+            "[{session_id}] LLM request — asr_text_len: {}",
+            asr_text.len()
+        );
         log::debug!("[{session_id}] LLM request — asr_text: \"{}\"", asr_text);
         // Skip interim history for local LLM — small models don't benefit from it
         // and it increases prompt length / inference time.
@@ -842,12 +843,8 @@ async fn run_session(
             history.len()
         );
 
-        let user_prompt = prompt::render_user_prompt(
-            &user_prompt_template,
-            &asr_text,
-            &candidates,
-            history,
-        );
+        let user_prompt =
+            prompt::render_user_prompt(&user_prompt_template, &asr_text, &candidates, history);
         log::debug!("[{session_id}] LLM user prompt:\n{}", user_prompt);
 
         let request = CorrectionRequest {
@@ -865,7 +862,7 @@ async fn run_session(
             }
             Err(e) => {
                 log::warn!("[{session_id}] LLM failed, falling back to ASR text: {e}");
-                invoke_session_warning(session_token,&format!("LLM correction failed: {e}"));
+                invoke_session_warning(session_token, &format!("LLM correction failed: {e}"));
                 asr_text
             }
         }
@@ -882,9 +879,9 @@ async fn run_session(
     // pasting stale text from an aborted session into the new session's window.
     if cancelled.load(Ordering::SeqCst) {
         log::info!("[{session_id}] session cancelled after LLM correction");
-        invoke_state_changed(session_token,"cancelled");
+        invoke_state_changed(session_token, "cancelled");
         cleanup_session(&session_arc);
-        invoke_state_changed(session_token,"idle");
+        invoke_state_changed(session_token, "idle");
         return;
     }
 
@@ -896,14 +893,14 @@ async fn run_session(
             let _ = session.transition(SessionState::PreparingPaste);
         }
     }
-    invoke_state_changed(session_token,"preparing_paste");
+    invoke_state_changed(session_token, "preparing_paste");
 
     // --- Deliver result to Obj-C ---
     // The Obj-C side owns all state transitions from here (pasting → idle).
     // Rust must NOT emit completed/idle state changes — they would be
     // dispatched to the main queue and overwrite the pasting state that
     // Obj-C sets in the final-text callback.
-    invoke_final_text_ready(session_token,&final_text);
+    invoke_final_text_ready(session_token, &final_text);
 
     {
         let mut s = session_arc.lock().unwrap();
@@ -930,7 +927,7 @@ async fn wait_for_final(
             Ok(AsrEvent::Interim(text)) => {
                 if !text.is_empty() {
                     aggregator.update_interim(&text);
-                    invoke_interim_text(session_token,&text);
+                    invoke_interim_text(session_token, &text);
                 }
             }
             Ok(AsrEvent::Definite(text)) => {
@@ -1192,9 +1189,15 @@ pub unsafe extern "C" fn sp_llm_test(
     model: *const c_char,
     max_token_param: *const c_char,
 ) -> *mut c_char {
-    let base_url = unsafe { cstr_to_str(base_url) }.unwrap_or_default().to_string();
-    let api_key = unsafe { cstr_to_str(api_key) }.unwrap_or_default().to_string();
-    let model = unsafe { cstr_to_str(model) }.unwrap_or_default().to_string();
+    let base_url = unsafe { cstr_to_str(base_url) }
+        .unwrap_or_default()
+        .to_string();
+    let api_key = unsafe { cstr_to_str(api_key) }
+        .unwrap_or_default()
+        .to_string();
+    let model = unsafe { cstr_to_str(model) }
+        .unwrap_or_default()
+        .to_string();
     let max_token_param_str = unsafe { cstr_to_str(max_token_param) }.unwrap_or_default();
     let max_token_parameter = if max_token_param_str == "max_tokens" {
         config::LlmMaxTokenParameter::MaxTokens
@@ -1231,11 +1234,8 @@ pub unsafe extern "C" fn sp_llm_test(
 
     let dict_path = config::resolve_dictionary_path(&cfg);
     let dictionary = dictionary::load_dictionary(&dict_path).unwrap_or_default();
-    let candidates = prompt::filter_dictionary_candidates(
-        &dictionary,
-        "",
-        llm_cfg.dictionary_max_candidates,
-    );
+    let candidates =
+        prompt::filter_dictionary_candidates(&dictionary, "", llm_cfg.dictionary_max_candidates);
 
     // Render user prompt from template with test content
     let test_asr = "so umm i installed this program called koe on my computer and like, \
@@ -1251,7 +1251,9 @@ pub unsafe extern "C" fn sp_llm_test(
                 "elapsed_ms": 0,
                 "message": format!("Failed to create HTTP client: {e}"),
             });
-            return CString::new(json.to_string()).unwrap_or_default().into_raw();
+            return CString::new(json.to_string())
+                .unwrap_or_default()
+                .into_raw();
         }
     };
 
@@ -1264,17 +1266,18 @@ pub unsafe extern "C" fn sp_llm_test(
                 "elapsed_ms": 0,
                 "message": format!("Failed to create async runtime: {e}"),
             });
-            return CString::new(json.to_string()).unwrap_or_default().into_raw();
+            return CString::new(json.to_string())
+                .unwrap_or_default()
+                .into_raw();
         }
     };
 
-    let (result, elapsed) =
-        rt.block_on(llm::openai_compatible::test_correction(
-            client,
-            &llm_cfg,
-            &system_prompt,
-            &user_prompt,
-        ));
+    let (result, elapsed) = rt.block_on(llm::openai_compatible::test_correction(
+        client,
+        &llm_cfg,
+        &system_prompt,
+        &user_prompt,
+    ));
     let elapsed_ms = elapsed.as_millis() as u64;
 
     let json = match result {
@@ -1290,7 +1293,9 @@ pub unsafe extern "C" fn sp_llm_test(
         }),
     };
 
-    CString::new(json.to_string()).unwrap_or_default().into_raw()
+    CString::new(json.to_string())
+        .unwrap_or_default()
+        .into_raw()
 }
 
 /// Free a string returned by sp_core_scan_models_json().
@@ -1488,9 +1493,7 @@ mod tests {
             Ok(())
         }
         async fn next_event(&mut self) -> koe_asr::error::Result<AsrEvent> {
-            self.events
-                .pop_front()
-                .unwrap_or(Ok(AsrEvent::Closed))
+            self.events.pop_front().unwrap_or(Ok(AsrEvent::Closed))
         }
         async fn close(&mut self) -> koe_asr::error::Result<()> {
             Ok(())
@@ -1532,9 +1535,8 @@ mod tests {
 
     #[tokio::test]
     async fn wait_for_final_returns_error_on_read_error() {
-        let mut mock = MockAsrProvider::new(vec![
-            Err(AsrError::Connection("connection lost".into())),
-        ]);
+        let mut mock =
+            MockAsrProvider::new(vec![Err(AsrError::Connection("connection lost".into()))]);
         let mut agg = TranscriptAggregator::new();
         let result = wait_for_final(0, &mut mock, &mut agg).await;
         assert!(result.is_some());

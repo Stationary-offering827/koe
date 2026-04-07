@@ -192,7 +192,14 @@ pub fn model_status(model_dir: &Path, mode: VerifyMode) -> ModelStatus {
     let mut cache_dirty = false;
 
     for file in &model.manifest.files {
-        if check_file(model_dir, file, mode, &cache, &mut new_cache, &mut cache_dirty) {
+        if check_file(
+            model_dir,
+            file,
+            mode,
+            &cache,
+            &mut new_cache,
+            &mut cache_dirty,
+        ) {
             found += 1;
         }
     }
@@ -568,9 +575,7 @@ where
             )));
         }
     } else if file.size > 0 {
-        let actual_size = std::fs::metadata(&part_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let actual_size = std::fs::metadata(&part_path).map(|m| m.len()).unwrap_or(0);
         if actual_size != file.size {
             let _ = std::fs::remove_file(&part_path);
             return Err(KoeError::Config(format!(
@@ -726,8 +731,14 @@ mod tests {
         .unwrap();
         fs::write(tmp.join("model.bin"), content).unwrap();
 
-        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
-        assert_eq!(model_status(&tmp, VerifyMode::ForceVerify), ModelStatus::Installed);
+        assert_eq!(
+            model_status(&tmp, VerifyMode::Normal),
+            ModelStatus::Installed
+        );
+        assert_eq!(
+            model_status(&tmp, VerifyMode::ForceVerify),
+            ModelStatus::Installed
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -763,8 +774,14 @@ mod tests {
         .unwrap();
         fs::write(tmp.join("model.bin"), content).unwrap();
 
-        assert_eq!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::Installed);
-        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+        assert_eq!(
+            model_status(&tmp, VerifyMode::CacheOnly),
+            ModelStatus::Installed
+        );
+        assert_eq!(
+            model_status(&tmp, VerifyMode::Normal),
+            ModelStatus::Installed
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -817,15 +834,25 @@ mod tests {
             }],
         };
 
-        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(
+            tmp.join(MANIFEST_FILE),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
         fs::write(tmp.join("model.bin"), content).unwrap();
 
         // Normal: compute + cache
-        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+        assert_eq!(
+            model_status(&tmp, VerifyMode::Normal),
+            ModelStatus::Installed
+        );
         assert!(tmp.join(CHECKSUM_CACHE_FILE).exists());
 
         // CacheOnly: cache hit
-        assert_eq!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::Installed);
+        assert_eq!(
+            model_status(&tmp, VerifyMode::CacheOnly),
+            ModelStatus::Installed
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -852,10 +879,17 @@ mod tests {
                 url: String::new(),
             }],
         };
-        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(
+            tmp.join(MANIFEST_FILE),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
         // No model.bin file
 
-        assert_eq!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::NotInstalled);
+        assert_eq!(
+            model_status(&tmp, VerifyMode::CacheOnly),
+            ModelStatus::NotInstalled
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -913,11 +947,18 @@ mod tests {
                 url: String::new(),
             }],
         };
-        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(
+            tmp.join(MANIFEST_FILE),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
         fs::write(tmp.join("model.bin"), content).unwrap();
 
         // Build cache
-        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+        assert_eq!(
+            model_status(&tmp, VerifyMode::Normal),
+            ModelStatus::Installed
+        );
         assert!(tmp.join(CHECKSUM_CACHE_FILE).exists());
 
         // Remove model files (keeps manifest)
@@ -926,7 +967,10 @@ mod tests {
         assert!(!tmp.join(CHECKSUM_CACHE_FILE).exists());
         assert!(tmp.join(MANIFEST_FILE).exists());
 
-        assert_eq!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::NotInstalled);
+        assert_eq!(
+            model_status(&tmp, VerifyMode::CacheOnly),
+            ModelStatus::NotInstalled
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -1009,11 +1053,18 @@ mod tests {
                 url: String::new(),
             }],
         };
-        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(
+            tmp.join(MANIFEST_FILE),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
         fs::write(tmp.join("model.bin"), content).unwrap();
 
         // Build cache
-        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+        assert_eq!(
+            model_status(&tmp, VerifyMode::Normal),
+            ModelStatus::Installed
+        );
 
         // Overwrite file with different content (same size, different sha, new mtime)
         // Use sleep to ensure mtime changes (filesystem granularity)
@@ -1021,10 +1072,16 @@ mod tests {
         fs::write(tmp.join("model.bin"), b"modified content").unwrap();
 
         // CacheOnly: mtime changed → cache invalid → returns false
-        assert_ne!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::Installed);
+        assert_ne!(
+            model_status(&tmp, VerifyMode::CacheOnly),
+            ModelStatus::Installed
+        );
 
         // Normal: recomputes sha, finds mismatch
-        assert_ne!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+        assert_ne!(
+            model_status(&tmp, VerifyMode::Normal),
+            ModelStatus::Installed
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -1059,7 +1116,11 @@ mod tests {
                 url: String::new(),
             }],
         };
-        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(
+            tmp.join(MANIFEST_FILE),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
         fs::write(tmp.join("model.bin"), content).unwrap();
 
         // No .koe-checksum.json exists

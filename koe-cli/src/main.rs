@@ -101,7 +101,10 @@ fn list() -> Result<(), String> {
     let models = model_manager::scan_models();
 
     if models.is_empty() {
-        println!("No models found in {}", model_manager::models_dir().display());
+        println!(
+            "No models found in {}",
+            model_manager::models_dir().display()
+        );
         return Ok(());
     }
 
@@ -133,7 +136,10 @@ fn status(model: &str, verify_mode_str: &str) -> Result<(), String> {
     let model_dir = koe_core::config::resolve_model_dir(model);
 
     if !model_dir.exists() {
-        return Err(format!("model directory not found: {}", model_dir.display()));
+        return Err(format!(
+            "model directory not found: {}",
+            model_dir.display()
+        ));
     }
 
     let mode = match verify_mode_str {
@@ -164,7 +170,10 @@ fn remove(model: &str) -> Result<(), String> {
     let model_dir = koe_core::config::resolve_model_dir(model);
 
     if !model_dir.exists() {
-        return Err(format!("model directory not found: {}", model_dir.display()));
+        return Err(format!(
+            "model directory not found: {}",
+            model_dir.display()
+        ));
     }
 
     let removed = model_manager::remove_model_files(&model_dir).map_err(|e| format!("{e}"))?;
@@ -176,7 +185,10 @@ async fn pull(model: &str) -> Result<(), String> {
     let model_dir = koe_core::config::resolve_model_dir(model);
 
     if !model_dir.exists() {
-        return Err(format!("model directory not found: {}", model_dir.display()));
+        return Err(format!(
+            "model directory not found: {}",
+            model_dir.display()
+        ));
     }
 
     let multi = Arc::new(MultiProgress::new());
@@ -189,10 +201,8 @@ async fn pull(model: &str) -> Result<(), String> {
     .unwrap()
     .progress_chars("█▓░");
 
-    let style_done = ProgressStyle::with_template(
-        "{prefix:<25!} {msg:<9} {total_bytes:>44}",
-    )
-    .unwrap();
+    let style_done =
+        ProgressStyle::with_template("{prefix:<25!} {msg:<9} {total_bytes:>44}").unwrap();
 
     let multi_clone = multi.clone();
     let bars_clone = bars.clone();
@@ -200,40 +210,45 @@ async fn pull(model: &str) -> Result<(), String> {
     let style_done_c = style_done.clone();
 
     let cancel = model_manager::CancellationToken::new();
-    model_manager::download_model(&model_dir, move |progress| {
-        let mut bars_guard = bars_clone.lock().unwrap();
+    model_manager::download_model(
+        &model_dir,
+        move |progress| {
+            let mut bars_guard = bars_clone.lock().unwrap();
 
-        // Ensure vec is large enough
-        while bars_guard.len() <= progress.file_index {
-            bars_guard.push(None);
-        }
-
-        let pb = bars_guard[progress.file_index].get_or_insert_with(|| {
-            let pb = multi_clone.add(ProgressBar::new(progress.bytes_total));
-            pb.set_style(style_c.clone());
-            pb.set_prefix(progress.filename.clone());
-            pb
-        });
-
-        if progress.already_exists {
-            pb.set_length(progress.bytes_total);
-            pb.set_position(progress.bytes_total);
-            pb.set_style(style_done_c.clone());
-            pb.set_message("exists");
-            pb.finish();
-        } else if progress.bytes_downloaded >= progress.bytes_total && progress.bytes_total > 0 {
-            pb.set_position(progress.bytes_total);
-            pb.set_style(style_done_c.clone());
-            pb.set_message("done");
-            pb.finish();
-        } else {
-            if pb.length().unwrap_or(0) == 0 && progress.bytes_total > 0 {
-                pb.set_length(progress.bytes_total);
+            // Ensure vec is large enough
+            while bars_guard.len() <= progress.file_index {
+                bars_guard.push(None);
             }
-            pb.set_message("pulling");
-            pb.set_position(progress.bytes_downloaded);
-        }
-    }, cancel)
+
+            let pb = bars_guard[progress.file_index].get_or_insert_with(|| {
+                let pb = multi_clone.add(ProgressBar::new(progress.bytes_total));
+                pb.set_style(style_c.clone());
+                pb.set_prefix(progress.filename.clone());
+                pb
+            });
+
+            if progress.already_exists {
+                pb.set_length(progress.bytes_total);
+                pb.set_position(progress.bytes_total);
+                pb.set_style(style_done_c.clone());
+                pb.set_message("exists");
+                pb.finish();
+            } else if progress.bytes_downloaded >= progress.bytes_total && progress.bytes_total > 0
+            {
+                pb.set_position(progress.bytes_total);
+                pb.set_style(style_done_c.clone());
+                pb.set_message("done");
+                pb.finish();
+            } else {
+                if pb.length().unwrap_or(0) == 0 && progress.bytes_total > 0 {
+                    pb.set_length(progress.bytes_total);
+                }
+                pb.set_message("pulling");
+                pb.set_position(progress.bytes_downloaded);
+            }
+        },
+        cancel,
+    )
     .await
     .map_err(|e| format!("{e}"))?;
 
@@ -301,15 +316,8 @@ async fn manifest_generate(
         .filter(|e| e.entry_type == "file")
         .map(|e| {
             let size = e.lfs.as_ref().map(|l| l.size).or(e.size).unwrap_or(0);
-            let sha256 = e
-                .lfs
-                .as_ref()
-                .map(|l| l.oid.as_str())
-                .unwrap_or("");
-            let url = format!(
-                "https://huggingface.co/{}/resolve/main/{}",
-                repo, e.path
-            );
+            let sha256 = e.lfs.as_ref().map(|l| l.oid.as_str()).unwrap_or("");
+            let url = format!("https://huggingface.co/{}/resolve/main/{}", repo, e.path);
             serde_json::json!({
                 "name": e.path,
                 "size": size,

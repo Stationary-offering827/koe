@@ -121,7 +121,10 @@ async fn test_connect_fails_with_invalid_credentials() {
 #[tokio::test]
 async fn test_doubaoime_connect_and_send_silence() {
     let mut headers = std::collections::HashMap::new();
-    headers.insert("credential_path".to_string(), "/tmp/test_doubaoime_creds.json".to_string());
+    headers.insert(
+        "credential_path".to_string(),
+        "/tmp/test_doubaoime_creds.json".to_string(),
+    );
 
     let config = AsrConfig {
         url: String::new(),
