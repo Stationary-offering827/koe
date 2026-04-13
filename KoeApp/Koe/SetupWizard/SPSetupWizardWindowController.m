@@ -738,11 +738,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Provider
     [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
     self.asrProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 200, 26) pullsDown:NO];
-    [self.asrProviderPopup addItemWithTitle:@"DoubaoIME (\u8c46\u5305\u8f93\u5165\u6cd5, \u514d\u8d39)"];
+    [self.asrProviderPopup addItemWithTitle:@"DoubaoIME (Built-in, Free)"];
     [self.asrProviderPopup lastItem].representedObject = @"doubaoime";
-    [self.asrProviderPopup addItemWithTitle:@"Doubao (\u8c46\u5305)"];
+    [self.asrProviderPopup addItemWithTitle:@"Doubao (ByteDance)"];
     [self.asrProviderPopup lastItem].representedObject = @"doubao";
-    [self.asrProviderPopup addItemWithTitle:@"Qwen (\u963f\u91cc\u4e91)"];
+    [self.asrProviderPopup addItemWithTitle:@"Qwen (Alibaba Cloud)"];
     [self.asrProviderPopup lastItem].representedObject = @"qwen";
     NSArray<NSString *> *supportedLocalProviders = [self.rustBridge supportedLocalProviders];
     // Add Apple Speech (macOS 26+, no model download required; also requires the
