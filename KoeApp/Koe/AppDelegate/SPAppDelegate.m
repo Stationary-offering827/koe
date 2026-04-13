@@ -382,8 +382,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
     }];
     if (started) return;
 
-    // After a fresh microphone permission grant the audio subsystem may need
-    // a moment to reconfigure.  Retry once after a short delay before giving up.
+    // After a device route change or fresh permission grant the audio
+    // subsystem may need a moment to settle.  Retry once after a short delay.
     NSLog(@"[Koe] Audio capture failed on first attempt, retrying in 500ms...");
     uint64_t token = self.rustBridge.currentSessionToken;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)),
